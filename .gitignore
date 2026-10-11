@@ -5,3 +5,4 @@ __pycache__/
 product.html
 artifacts/
 state.json
+.hm-chrome/

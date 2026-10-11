@@ -6,6 +6,8 @@ import os
 import re
 import smtplib
 import ssl
+import shutil
+import subprocess
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -20,14 +22,22 @@ def candidate_available(text: str, disabled: bool) -> bool:
     return bool(SIZE.match(text.strip())) and not disabled and not UNAVAILABLE.search(text)
 
 
-def check_stock(url: str = URL, *, headed: bool = False) -> bool:
+def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = None,
+                profile: str | None = None) -> bool:
     # Import lazily so notification logic can be tested without a browser.
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not headed)
-        context = browser.new_context(locale="it-IT")
-        page = context.new_page()
+        browser = None
+        if profile:
+            context = p.chromium.launch_persistent_context(
+                str(Path(profile).resolve()), channel=channel, headless=not headed,
+                locale="it-IT", timezone_id="Europe/Rome",
+            )
+        else:
+            browser = p.chromium.launch(headless=not headed, channel=channel)
+            context = browser.new_context(locale="it-IT")
+        page = context.pages[0] if context.pages else context.new_page()
         page.set_default_timeout(15000)
         try:
             response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -90,7 +100,25 @@ def check_stock(url: str = URL, *, headed: bool = False) -> bool:
             raise
         finally:
             context.close()
-            browser.close()
+            if browser:
+                browser.close()
+
+
+def init_session(profile: str) -> None:
+    """Open ordinary Chrome so the user can initialize a separate profile."""
+    candidates = [shutil.which("google-chrome"), shutil.which("chrome")]
+    for root in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+        if root:
+            candidates.append(str(Path(root) / "Google/Chrome/Application/chrome.exe"))
+    executable = next((path for path in candidates if path and Path(path).is_file()), None)
+    if not executable:
+        raise RuntimeError("Chrome non trovato: installa Google Chrome prima di inizializzare la sessione")
+    directory = Path(profile).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    subprocess.Popen([executable, f"--user-data-dir={directory}", "--no-first-run", URL])
+    print("Apri il prodotto e verifica che compaiano le taglie nel Chrome appena aperto.")
+    print("Poi chiudi tutte le finestre di questo profilo prima di lanciare il controllo.")
+    print("Nessuna email inviata. Profilo:", directory)
 
 
 def send_email() -> None:
@@ -115,9 +143,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Controlla senza inviare email")
     parser.add_argument("--headed", action="store_true", help="Esegue Chromium con interfaccia (su Linux usare xvfb-run)")
+    parser.add_argument("--browser", choices=["chromium", "chrome"], default="chromium")
+    parser.add_argument("--profile", help="Cartella di un profilo dedicato, ad esempio .hm-chrome")
+    parser.add_argument("--init-session", action="store_true", help="Apre Chrome normale per inizializzare manualmente il profilo, senza controllo o email")
     args = parser.parse_args()
+    if args.init_session:
+        if not args.profile or args.browser != "chrome":
+            parser.error("--init-session richiede --browser chrome e --profile")
+        init_session(args.profile)
+        return
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    available = check_stock(headed=args.headed)
+    available = check_stock(headed=args.headed, channel="chrome" if args.browser == "chrome" else None,
+                            profile=args.profile)
     logging.info("XS: %s", "disponibile" if available else "esaurita")
     if available and not args.dry_run:
         send_email()

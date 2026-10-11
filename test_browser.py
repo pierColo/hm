@@ -2,6 +2,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 import unittest
+from tempfile import TemporaryDirectory
 
 from check_stock import check_stock
 
@@ -44,6 +45,11 @@ class BrowserTests(unittest.TestCase):
 
     def test_disabled_xs_is_unavailable(self):
         self.assertFalse(check_stock(self.url + "/sold-out"))
+
+    def test_persistent_profile_can_be_reopened(self):
+        with TemporaryDirectory() as profile:
+            self.assertTrue(check_stock(self.url + "/available", profile=profile))
+            self.assertFalse(check_stock(self.url + "/sold-out", profile=profile))
 
     def test_http_200_block_is_an_error(self):
         with self.assertRaisesRegex(RuntimeError, "H&M antibot"):

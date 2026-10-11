@@ -31,6 +31,31 @@ python -m unittest -v
 Per l'invio locale imposta `GMAIL_USERNAME` e `GMAIL_APP_PASSWORD` nell'ambiente.
 Non inserire credenziali nei file o nei commit.
 
+### Prova con Chrome installato e sessione persistente
+
+Se Chrome normale apre il prodotto ma Chromium automatico riceve 403, prova un
+profilo dedicato. Il primo comando apre Chrome senza automazione per inizializzare
+la sessione; non esegue il controllo e non invia email.
+
+```powershell
+python check_stock.py --browser chrome --profile .hm-chrome --init-session
+```
+
+Nel Chrome appena aperto visita il prodotto, gestisci il consenso cookie e verifica
+che siano visibili le taglie. Non è necessario accedere all'account H&M.
+**Chiudi tutte le finestre di quel profilo**, poi esegui:
+
+```powershell
+python check_stock.py --browser chrome --profile .hm-chrome --headed --dry-run
+```
+
+La cartella `.hm-chrome` contiene cookie e dati di sessione ed è esclusa da Git.
+Usa solo questo profilo dedicato, non la cartella del tuo profilo Chrome personale.
+Questa modalità è un tentativo: il sito può ancora bloccare il browser automatico.
+La sessione resta sul PC: non viene trasferita ai runner GitHub e il workflow cloud
+rimane invariato. Se il controllo locale funziona, si potrà configurare un runner
+self-hosted sullo stesso PC.
+
 ## Limiti
 
 Il controllo usa un browser Chromium, seleziona XS e verifica che il pulsante di acquisto

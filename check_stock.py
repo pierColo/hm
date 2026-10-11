@@ -166,7 +166,7 @@ def init_session(profile: str, *, debug: bool = False) -> None:
     print("Nessuna email inviata. Profilo:", directory)
 
 
-def send_email() -> None:
+def send_email(*, test: bool = False) -> None:
     username = os.environ.get("GMAIL_USERNAME", "").strip()
     password = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "")
     if not username or not password:
@@ -174,11 +174,19 @@ def send_email() -> None:
     message = EmailMessage()
     message["From"] = username
     message["To"] = RECIPIENT
-    message["Subject"] = "H&M: taglia XS disponibile"
-    message.set_content(
-        "La taglia XS risulta acquistabile per l'impermeabile H&M monitorato.\n\n"
-        f"{URL}\n\nLa disponibilità può cambiare prima dell'acquisto.\n"
-    )
+    if test:
+        message["Subject"] = "TEST H&M: taglia XS esaurita"
+        message.set_content(
+            "Email di test del monitor H&M. La taglia XS risulta esaurita.\n"
+            "Questo messaggio verifica l'invio tramite Gmail SMTP.\n\n"
+            f"{URL}\n"
+        )
+    else:
+        message["Subject"] = "H&M: taglia XS disponibile"
+        message.set_content(
+            "La taglia XS risulta acquistabile per l'impermeabile H&M monitorato.\n\n"
+            f"{URL}\n\nLa disponibilità può cambiare prima dell'acquisto.\n"
+        )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ssl.create_default_context(), timeout=30) as smtp:
         smtp.login(username, password)
         smtp.send_message(message)
@@ -187,6 +195,7 @@ def send_email() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Controlla senza inviare email")
+    parser.add_argument("--test-email", action="store_true", help="Invia un'email di test se XS risulta esaurita; --dry-run impedisce anche questo invio")
     parser.add_argument("--headed", action="store_true", help="Esegue Chromium con interfaccia (su Linux usare xvfb-run)")
     parser.add_argument("--browser", choices=["chromium", "chrome"], default="chromium")
     parser.add_argument("--profile", help="Cartella di un profilo dedicato, ad esempio .hm-chrome")
@@ -199,13 +208,18 @@ def main() -> None:
         init_session(args.profile, debug=args.cdp)
         return
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    logging.info("Controllo avviato. Invio email: %s", "disattivato (dry-run)" if args.dry_run else "solo se XS disponibile")
+    mode = "disattivato (dry-run)" if args.dry_run else (
+        "avviso se XS disponibile, test se esaurita" if args.test_email else "solo se XS disponibile")
+    logging.info("Controllo avviato. Invio email: %s", mode)
     available = check_stock(headed=args.headed, channel="chrome" if args.browser == "chrome" else None,
                             profile=args.profile, cdp_url="http://127.0.0.1:9222" if args.cdp else None)
     logging.info("XS: %s", "disponibile" if available else "esaurita")
     if available and not args.dry_run:
         send_email()
         logging.info("Email inviata a %s", RECIPIENT)
+    elif not available and args.test_email and not args.dry_run:
+        send_email(test=True)
+        logging.info("Email di test inviata a %s (XS esaurita)", RECIPIENT)
 
 
 if __name__ == "__main__":

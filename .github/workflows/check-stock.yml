@@ -9,6 +9,10 @@ on:
         description: Controlla senza inviare email
         type: boolean
         default: true
+      test_email:
+        description: Invia email di test se XS è esaurita (disattivare dry_run)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,12 +38,12 @@ jobs:
           GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          TEST_EMAIL: ${{ github.event_name == 'workflow_dispatch' && inputs.test_email }}
         run: |
-          if [ "$DRY_RUN" = "true" ]; then
-            xvfb-run -a python check_stock.py --headed --dry-run
-          else
-            xvfb-run -a python check_stock.py --headed
-          fi
+          args=(--headed)
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          if [ "$TEST_EMAIL" = "true" ]; then args+=(--test-email); fi
+          xvfb-run -a python check_stock.py "${args[@]}"
       - name: Diagnostica in caso di errore
         if: failure()
         uses: actions/upload-artifact@v4

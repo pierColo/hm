@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from check_stock import RECIPIENT, candidate_available, send_email
+from check_stock import RECIPIENT, candidate_available, send_email, main
 
 
 class StockTests(unittest.TestCase):
@@ -21,6 +21,45 @@ class StockTests(unittest.TestCase):
         message = smtp.send_message.call_args.args[0]
         self.assertEqual(message["To"], RECIPIENT)
         self.assertIn("1333421001", message.get_content())
+
+    @patch.dict("os.environ", {"GMAIL_USERNAME": "sender@gmail.com", "GMAIL_APP_PASSWORD": "app-password"})
+    @patch("check_stock.smtplib.SMTP_SSL")
+    def test_test_email_clearly_reports_unavailable(self, smtp_class):
+        send_email(test=True)
+        smtp = smtp_class.return_value.__enter__.return_value
+        message = smtp.send_message.call_args.args[0]
+        self.assertEqual(message["To"], RECIPIENT)
+        self.assertEqual(message["Subject"], "TEST H&M: taglia XS esaurita")
+        self.assertIn("XS risulta esaurita", message.get_content())
+        self.assertNotIn("acquistabile", message.get_content())
+
+    @patch("check_stock.send_email")
+    @patch("check_stock.check_stock", return_value=False)
+    def test_test_email_only_sent_when_explicitly_requested(self, check, send):
+        with patch("sys.argv", ["check_stock.py", "--test-email"]):
+            main()
+        send.assert_called_once_with(test=True)
+        send.reset_mock()
+        with patch("sys.argv", ["check_stock.py"]):
+            main()
+        send.assert_not_called()
+
+    @patch("check_stock.send_email")
+    @patch("check_stock.check_stock")
+    def test_dry_run_prevents_all_email(self, check, send):
+        for available in (True, False):
+            check.return_value = available
+            with patch("sys.argv", ["check_stock.py", "--test-email", "--dry-run"]):
+                main()
+        send.assert_not_called()
+
+    @patch("check_stock.send_email")
+    @patch("check_stock.check_stock", side_effect=RuntimeError("H&M HTTP 403"))
+    def test_failed_check_does_not_send_unavailable_test(self, check, send):
+        with patch("sys.argv", ["check_stock.py", "--test-email"]):
+            with self.assertRaises(RuntimeError):
+                main()
+        send.assert_not_called()
 
     @patch.dict("os.environ", {}, clear=True)
     def test_missing_credentials_fail(self):

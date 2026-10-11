@@ -31,6 +31,35 @@ python -m unittest -v
 Per l'invio locale imposta `GMAIL_USERNAME` e `GMAIL_APP_PASSWORD` nell'ambiente.
 Non inserire credenziali nei file o nei commit.
 
+### Email di test quando XS è esaurita
+
+Con Chrome dedicato già aperto e la pagina prodotto leggibile:
+
+```powershell
+python -u check_stock.py --cdp --test-email
+```
+
+Se XS è esaurita, invia a `gienni.doria@gmail.com` un messaggio con oggetto
+`TEST H&M: taglia XS esaurita`. Se è disponibile, invia il normale avviso.
+`--dry-run` impedisce tutti gli invii, anche quelli di test. Un errore di lettura
+(ad esempio HTTP 403) non viene trattato come taglia esaurita e non invia email.
+Senza `--test-email`, XS esaurita non genera messaggi.
+
+I secret GitHub non sono disponibili nel PowerShell locale. Per il test locale
+imposta le credenziali senza scrivere la password nella cronologia:
+
+```powershell
+$env:GMAIL_USERNAME = Read-Host 'Gmail del mittente'
+$hmPassword = Read-Host 'Password per app Gmail' -AsSecureString
+$env:GMAIL_APP_PASSWORD = [System.Net.NetworkCredential]::new('', $hmPassword).Password
+python -u check_stock.py --cdp --test-email
+Remove-Item Env:GMAIL_APP_PASSWORD
+```
+
+Su Actions, nell'avvio manuale seleziona `test_email` e disattiva `dry_run`.
+La modalità test non è attiva nelle esecuzioni pianificate. Il runner cloud deve
+comunque riuscire a leggere H&M prima di inviare il messaggio.
+
 ### Prova con Chrome installato e sessione persistente
 
 Se Chrome normale apre il prodotto ma Chromium automatico riceve 403, prova un

@@ -1,6 +1,7 @@
 """Read-only probe: compare default and full Chromium on H&M."""
 import argparse
 import platform
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 URL = "https://www2.hm.com/it_it/productpage.1333421001.html"
@@ -23,6 +24,12 @@ with sync_playwright() as p:
                 page.wait_for_timeout(3000)
             response = page.goto(URL, wait_until="domcontentloaded", timeout=45000)
             print(mode, "product", response.status, "title", page.title(), flush=True)
+            page.wait_for_timeout(12000)
+            body = page.locator("body").inner_text(timeout=5000)
+            print(mode, "after-js", "title", page.title(), "body", body[:800], flush=True)
+            Path("artifacts").mkdir(exist_ok=True)
+            Path(f"artifacts/probe-{mode}.html").write_text(page.content(), encoding="utf-8")
+            page.screenshot(path=f"artifacts/probe-{mode}.png", full_page=True)
         except Exception as exc:
             print(mode, type(exc).__name__, str(exc)[:300], flush=True)
         finally:

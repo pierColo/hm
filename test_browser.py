@@ -3,6 +3,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 import unittest
 from tempfile import TemporaryDirectory
+from pathlib import Path
+import subprocess
+import time
+import json
+from urllib.request import urlopen
 
 from check_stock import check_stock
 
@@ -54,6 +59,40 @@ class BrowserTests(unittest.TestCase):
     def test_http_200_block_is_an_error(self):
         with self.assertRaisesRegex(RuntimeError, "H&M antibot"):
             check_stock(self.url + "/blocked")
+
+    def test_attach_to_existing_chrome_keeps_it_open(self):
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            executable = p.chromium.executable_path
+        with TemporaryDirectory() as profile:
+            url = self.url + "/available"
+            process = subprocess.Popen([
+                executable, "--headless=new", "--no-sandbox", "--no-first-run",
+                "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+                f"--user-data-dir={profile}", url,
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                deadline = time.monotonic() + 15
+                endpoint = None
+                ready = False
+                while time.monotonic() < deadline:
+                    port_file = Path(profile) / "DevToolsActivePort"
+                    if port_file.exists():
+                        port = port_file.read_text().splitlines()[0]
+                        endpoint = f"http://127.0.0.1:{port}"
+                        with urlopen(endpoint + "/json/list", timeout=2) as response:
+                            ready = any(tab.get("url") == url for tab in json.load(response))
+                        if ready:
+                            break
+                    time.sleep(0.1)
+                self.assertTrue(ready, "Chrome did not expose the fixture tab")
+                self.assertTrue(check_stock(url, cdp_url=endpoint))
+                self.assertIsNone(process.poll(), "The attached browser was closed")
+                with urlopen(endpoint + "/json/list", timeout=2) as response:
+                    self.assertTrue(any(tab.get("url") == url for tab in json.load(response)))
+            finally:
+                process.terminate()
+                process.wait(timeout=10)
 
 
 if __name__ == "__main__":

@@ -61,6 +61,27 @@ ha un limite di 30 secondi, la navigazione di 60 e la ricerca di ciascun seletto
 di 45. Se fallisce, consulta l'ultimo messaggio e i file in `artifacts/`.
 Se si ferma su `Avvio chrome`, chiudi tutte le finestre del profilo `.hm-chrome`.
 
+### Collegamento a Chrome aperto normalmente
+
+Se l'avvio tramite Playwright continua a ricevere 403, chiudi le finestre del
+profilo dedicato, poi aprilo normalmente con la porta di debug locale:
+
+```powershell
+python check_stock.py --browser chrome --profile .hm-chrome --init-session --cdp
+```
+
+Verifica che il prodotto e le taglie siano visibili nella nuova finestra e lascia
+aperta una sola scheda con l'URL esatto del prodotto. Poi, nello stesso PowerShell:
+
+```powershell
+python -u check_stock.py --cdp --dry-run
+```
+
+Il controllo si collega al browser aperto e usa la scheda esistente senza
+ricaricarla, poi lascia aperto Chrome. La porta 9222 è configurata su localhost;
+usa il profilo dedicato e chiudilo quando finisci il test. Questo tentativo non è
+ancora verificato sul prodotto reale e non rende operativi i runner cloud.
+
 ## Limiti
 
 Il controllo usa un browser Chromium, seleziona XS e verifica che il pulsante di acquisto

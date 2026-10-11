@@ -23,15 +23,27 @@ def candidate_available(text: str, disabled: bool) -> bool:
 
 
 def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = None,
-                profile: str | None = None) -> bool:
+                profile: str | None = None, cdp_url: str | None = None) -> bool:
     # Import lazily so notification logic can be tested without a browser.
     from playwright.sync_api import sync_playwright
 
-    logging.info("Avvio %s (%s), profilo: %s", channel or "Chromium",
-                 "con interfaccia" if headed else "senza interfaccia", profile or "temporaneo")
+    if cdp_url:
+        logging.info("Connessione al Chrome già aperto su %s...", cdp_url)
+    else:
+        logging.info("Avvio %s (%s), profilo: %s", channel or "Chromium",
+                     "con interfaccia" if headed else "senza interfaccia", profile or "temporaneo")
     with sync_playwright() as p:
         browser = None
-        if profile:
+        if cdp_url:
+            browser = p.chromium.connect_over_cdp(cdp_url, timeout=15000)
+            if not browser.contexts:
+                raise RuntimeError("Chrome non contiene una sessione aperta")
+            context = browser.contexts[0]
+            matches = [tab for tab in context.pages if tab.url.split('#')[0] == url]
+            if len(matches) != 1:
+                raise RuntimeError("Apri una sola scheda con il link del prodotto nel Chrome dedicato prima del controllo")
+            page = matches[0]
+        elif profile:
             context = p.chromium.launch_persistent_context(
                 str(Path(profile).resolve()), channel=channel, headless=not headed,
                 locale="it-IT", timezone_id="Europe/Rome",
@@ -40,14 +52,19 @@ def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = N
         else:
             browser = p.chromium.launch(headless=not headed, channel=channel, timeout=30000)
             context = browser.new_context(locale="it-IT")
-        page = context.pages[0] if context.pages else context.new_page()
+        if not cdp_url:
+            page = context.pages[0] if context.pages else context.new_page()
         page.set_default_timeout(15000)
         try:
-            logging.info("Browser avviato. Caricamento prodotto (massimo 60 secondi)...")
-            response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            logging.info("Risposta HTTP: %s", response.status if response else "nessuna risposta")
-            if response is None or response.status >= 400:
-                raise RuntimeError(f"H&M HTTP {response.status if response else 'nessuna risposta'}")
+            if cdp_url:
+                logging.info("Uso la scheda prodotto già aperta, senza ricaricarla.")
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
+            else:
+                logging.info("Browser avviato. Caricamento prodotto (massimo 60 secondi)...")
+                response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                logging.info("Risposta HTTP: %s", response.status if response else "nessuna risposta")
+                if response is None or response.status >= 400:
+                    raise RuntimeError(f"H&M HTTP {response.status if response else 'nessuna risposta'}")
             # Cookie consent may obscure the product controls.
             consent = page.get_by_role("button", name=re.compile(r"^(accetta tutti|accetta tutti i cookie|accept all)$", re.I))
             try:
@@ -115,12 +132,13 @@ def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = N
                 raise RuntimeError("H&M antibot: Access Denied; disponibilità non verificabile") from exc
             raise
         finally:
-            context.close()
-            if browser:
-                browser.close()
+            if not cdp_url:
+                context.close()
+                if browser:
+                    browser.close()
 
 
-def init_session(profile: str) -> None:
+def init_session(profile: str, *, debug: bool = False) -> None:
     """Open ordinary Chrome so the user can initialize a separate profile."""
     candidates = [shutil.which("google-chrome"), shutil.which("chrome")]
     for root in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
@@ -131,9 +149,13 @@ def init_session(profile: str) -> None:
         raise RuntimeError("Chrome non trovato: installa Google Chrome prima di inizializzare la sessione")
     directory = Path(profile).resolve()
     directory.mkdir(parents=True, exist_ok=True)
-    subprocess.Popen([executable, f"--user-data-dir={directory}", "--no-first-run", URL])
+    command = [executable, f"--user-data-dir={directory}", "--no-first-run"]
+    if debug:
+        command.extend(["--remote-debugging-address=127.0.0.1", "--remote-debugging-port=9222"])
+    subprocess.Popen([*command, URL])
     print("Apri il prodotto e verifica che compaiano le taglie nel Chrome appena aperto.")
-    print("Poi chiudi tutte le finestre di questo profilo prima di lanciare il controllo.")
+    print("Lascia aperta la scheda prodotto e lancia il controllo con --cdp." if debug else
+          "Poi chiudi tutte le finestre di questo profilo prima di lanciare il controllo.")
     print("Nessuna email inviata. Profilo:", directory)
 
 
@@ -162,16 +184,17 @@ def main() -> None:
     parser.add_argument("--browser", choices=["chromium", "chrome"], default="chromium")
     parser.add_argument("--profile", help="Cartella di un profilo dedicato, ad esempio .hm-chrome")
     parser.add_argument("--init-session", action="store_true", help="Apre Chrome normale per inizializzare manualmente il profilo, senza controllo o email")
+    parser.add_argument("--cdp", action="store_true", help="Si collega a Chrome aperto normalmente sulla porta locale 9222, senza ricaricare il prodotto")
     args = parser.parse_args()
     if args.init_session:
         if not args.profile or args.browser != "chrome":
             parser.error("--init-session richiede --browser chrome e --profile")
-        init_session(args.profile)
+        init_session(args.profile, debug=args.cdp)
         return
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     logging.info("Controllo avviato. Invio email: %s", "disattivato (dry-run)" if args.dry_run else "solo se XS disponibile")
     available = check_stock(headed=args.headed, channel="chrome" if args.browser == "chrome" else None,
-                            profile=args.profile)
+                            profile=args.profile, cdp_url="http://127.0.0.1:9222" if args.cdp else None)
     logging.info("XS: %s", "disponibile" if available else "esaurita")
     if available and not args.dry_run:
         send_email()

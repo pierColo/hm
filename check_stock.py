@@ -27,20 +27,25 @@ def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = N
     # Import lazily so notification logic can be tested without a browser.
     from playwright.sync_api import sync_playwright
 
+    logging.info("Avvio %s (%s), profilo: %s", channel or "Chromium",
+                 "con interfaccia" if headed else "senza interfaccia", profile or "temporaneo")
     with sync_playwright() as p:
         browser = None
         if profile:
             context = p.chromium.launch_persistent_context(
                 str(Path(profile).resolve()), channel=channel, headless=not headed,
                 locale="it-IT", timezone_id="Europe/Rome",
+                timeout=30000,
             )
         else:
-            browser = p.chromium.launch(headless=not headed, channel=channel)
+            browser = p.chromium.launch(headless=not headed, channel=channel, timeout=30000)
             context = browser.new_context(locale="it-IT")
         page = context.pages[0] if context.pages else context.new_page()
         page.set_default_timeout(15000)
         try:
+            logging.info("Browser avviato. Caricamento prodotto (massimo 60 secondi)...")
             response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            logging.info("Risposta HTTP: %s", response.status if response else "nessuna risposta")
             if response is None or response.status >= 400:
                 raise RuntimeError(f"H&M HTTP {response.status if response else 'nessuna risposta'}")
             # Cookie consent may obscure the product controls.
@@ -52,13 +57,16 @@ def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = N
             if page.title().strip().lower() == "access denied":
                 raise RuntimeError("H&M antibot: Access Denied dopo il caricamento JavaScript")
             # Some layouts keep sizes inside a dropdown.
+            logging.info("Pagina: %s. Ricerca selettore taglie (massimo 45 secondi)...", page.title())
             opener = page.get_by_role("button", name=re.compile(r"^(seleziona (?:la |una )?taglia|select size)", re.I))
             opener.or_(page.get_by_role("button", name=SIZE)).or_(page.get_by_role("radio", name=SIZE)).or_(page.get_by_role("option", name=SIZE)).first.wait_for(state="visible", timeout=45000)
             if opener.count() and opener.first.is_visible():
+                logging.info("Apertura selettore taglie...")
                 opener.first.click()
             # Only interactive size controls count. A plain XS mention is insufficient.
             controls = page.locator("button, [role='radio'], [role='option'], label")
             xs = controls.filter(has_text=SIZE)
+            logging.info("Ricerca controllo XS (massimo 45 secondi)...")
             xs.first.wait_for(state="visible", timeout=45000)
             matches = []
             for control in xs.all():
@@ -74,9 +82,11 @@ def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = N
             if len(matches) != 1:
                 raise RuntimeError("Più selettori XS visibili: controllo ambiguo")
             control, text, disabled = matches[0]
+            logging.info("Controllo XS trovato: %r, disabilitato: %s", text, disabled)
             if not candidate_available(text, disabled):
                 return False
             control.click()
+            logging.info("XS selezionata. Verifica pulsante acquisto...")
             # Selecting XS must enable purchase. Never click the cart button.
             add = page.get_by_role("button", name=ADD)
             add.first.wait_for(state="visible", timeout=10000)
@@ -93,9 +103,15 @@ def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = N
             return True
         except Exception as exc:
             Path("artifacts").mkdir(exist_ok=True)
-            page.screenshot(path="artifacts/check.png", full_page=True)
-            Path("artifacts/page.html").write_text(page.content(), encoding="utf-8")
-            if page.title().strip().lower() == "access denied":
+            blocked = False
+            try:
+                blocked = page.title().strip().lower() == "access denied"
+                Path("artifacts/page.html").write_text(page.content(), encoding="utf-8")
+                page.screenshot(path="artifacts/check.png", full_page=True, timeout=5000)
+                logging.error("Diagnostica salvata in artifacts/page.html e artifacts/check.png")
+            except Exception as diagnostic_error:
+                logging.warning("Diagnostica incompleta: %s", diagnostic_error)
+            if blocked:
                 raise RuntimeError("H&M antibot: Access Denied; disponibilità non verificabile") from exc
             raise
         finally:
@@ -153,6 +169,7 @@ def main() -> None:
         init_session(args.profile)
         return
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    logging.info("Controllo avviato. Invio email: %s", "disattivato (dry-run)" if args.dry_run else "solo se XS disponibile")
     available = check_stock(headed=args.headed, channel="chrome" if args.browser == "chrome" else None,
                             profile=args.profile)
     logging.info("XS: %s", "disponibile" if available else "esaurita")

@@ -56,6 +56,11 @@ La sessione resta sul PC: non viene trasferita ai runner GitHub e il workflow cl
 rimane invariato. Se il controllo locale funziona, si potrà configurare un runner
 self-hosted sullo stesso PC.
 
+Il controllo stampa subito `Controllo avviato` e poi ogni fase. L'avvio del browser
+ha un limite di 30 secondi, la navigazione di 60 e la ricerca di ciascun selettore
+di 45. Se fallisce, consulta l'ultimo messaggio e i file in `artifacts/`.
+Se si ferma su `Avvio chrome`, chiudi tutte le finestre del profilo `.hm-chrome`.
+
 ## Limiti
 
 Il controllo usa un browser Chromium, seleziona XS e verifica che il pulsante di acquisto

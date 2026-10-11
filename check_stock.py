@@ -9,6 +9,7 @@ import ssl
 import shutil
 import subprocess
 from email.message import EmailMessage
+from contextlib import contextmanager
 from pathlib import Path
 
 URL = "https://www2.hm.com/it_it/productpage.1333421001.html"
@@ -173,6 +174,45 @@ def init_session(profile: str, *, debug: bool = False) -> None:
     print("Nessuna email inviata. Profilo:", directory)
 
 
+@contextmanager
+def gmail_connection(username: str, password: str):
+    tls = ssl.create_default_context()
+    smtp = None
+    for port in (465, 587):
+        try:
+            logging.info("Connessione Gmail SMTP sulla porta %s...", port)
+            if port == 465:
+                smtp = smtplib.SMTP_SSL("smtp.gmail.com", port, context=tls, timeout=30)
+            else:
+                smtp = smtplib.SMTP("smtp.gmail.com", port, timeout=30)
+                smtp.ehlo()
+                smtp.starttls(context=tls)
+                smtp.ehlo()
+            smtp.login(username, password)
+            logging.info("Autenticazione Gmail riuscita sulla porta %s", port)
+            break
+        except smtplib.SMTPAuthenticationError as exc:
+            if smtp:
+                smtp.close()
+            raise RuntimeError("Gmail ha rifiutato le credenziali: verifica il mittente e la sua password per app Google") from exc
+        except (smtplib.SMTPServerDisconnected, OSError) as exc:
+            if smtp:
+                smtp.close()
+            smtp = None
+            if port == 587:
+                raise RuntimeError("Connessione Gmail interrotta su entrambe le porte 465 e 587; verifica rete, VPN o filtro antivirus SMTP") from exc
+            logging.warning("Connessione sulla porta 465 interrotta prima dell'invio; provo STARTTLS sulla 587")
+        except Exception:
+            if smtp:
+                smtp.close()
+            raise
+    try:
+        # Once sending starts, do not retry: delivery could already have occurred.
+        yield smtp
+    finally:
+        smtp.close()
+
+
 def send_email(*, test: bool = False) -> None:
     username = os.environ.get("GMAIL_USERNAME", "").strip()
     password = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "")
@@ -194,8 +234,7 @@ def send_email(*, test: bool = False) -> None:
             "La taglia XS risulta acquistabile per l'impermeabile H&M monitorato.\n\n"
             f"{URL}\n\nLa disponibilità può cambiare prima dell'acquisto.\n"
         )
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ssl.create_default_context(), timeout=30) as smtp:
-        smtp.login(username, password)
+    with gmail_connection(username, password) as smtp:
         smtp.send_message(message)
 
 

@@ -68,6 +68,14 @@ Su Actions, nell'avvio manuale seleziona `test_email` e disattiva `dry_run`.
 La modalità test non è attiva nelle esecuzioni pianificate. Il runner cloud deve
 comunque riuscire a leggere H&M prima di inviare il messaggio.
 
+Se Gmail interrompe la connessione prima dell'invio sulla porta 465, lo script
+prova la 587 con STARTTLS. Entrambe verificano il certificato TLS. Credenziali
+rifiutate non vengono ritentate. Dopo l'inizio dell'invio non ci sono tentativi
+automatici, per evitare duplicati in caso di consegna incerta.
+Se entrambe le connessioni si interrompono, verifica eventuali filtri SMTP della
+rete, VPN o antivirus. Se Gmail rifiuta il login, verifica che il mittente e la
+password per app appartengano allo stesso account Google.
+
 ### Prova con Chrome installato e sessione persistente
 
 Se Chrome normale apre il prodotto ma Chromium automatico riceve 403, prova un

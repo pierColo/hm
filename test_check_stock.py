@@ -1,5 +1,6 @@
 import unittest
 import os
+import smtplib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -37,7 +38,7 @@ class StockTests(unittest.TestCase):
     def test_email_destination_and_tls(self, smtp_class):
         send_email()
         self.assertEqual(smtp_class.call_args.args, ("smtp.gmail.com", 465))
-        smtp = smtp_class.return_value.__enter__.return_value
+        smtp = smtp_class.return_value
         smtp.login.assert_called_once_with("sender@gmail.com", "abcdefghijklmnop")
         message = smtp.send_message.call_args.args[0]
         self.assertEqual(message["To"], RECIPIENT)
@@ -47,12 +48,46 @@ class StockTests(unittest.TestCase):
     @patch("check_stock.smtplib.SMTP_SSL")
     def test_test_email_clearly_reports_unavailable(self, smtp_class):
         send_email(test=True)
-        smtp = smtp_class.return_value.__enter__.return_value
+        smtp = smtp_class.return_value
         message = smtp.send_message.call_args.args[0]
         self.assertEqual(message["To"], RECIPIENT)
         self.assertEqual(message["Subject"], "TEST H&M: taglia XS esaurita")
         self.assertIn("XS risulta esaurita", message.get_content())
         self.assertNotIn("acquistabile", message.get_content())
+
+    @patch.dict("os.environ", {"GMAIL_USERNAME": "sender@gmail.com", "GMAIL_APP_PASSWORD": "app-password"})
+    @patch("check_stock.smtplib.SMTP")
+    @patch("check_stock.smtplib.SMTP_SSL")
+    def test_disconnected_login_uses_starttls_before_single_send(self, ssl_smtp, plain_smtp):
+        ssl_smtp.return_value.login.side_effect = smtplib.SMTPServerDisconnected("closed")
+        send_email(test=True)
+        ssl_smtp.return_value.send_message.assert_not_called()
+        ssl_smtp.return_value.close.assert_called_once()
+        self.assertEqual(plain_smtp.call_args.args, ("smtp.gmail.com", 587))
+        smtp = plain_smtp.return_value
+        smtp.starttls.assert_called_once()
+        self.assertEqual(smtp.ehlo.call_count, 2)
+        smtp.login.assert_called_once_with("sender@gmail.com", "app-password")
+        smtp.send_message.assert_called_once()
+
+    @patch.dict("os.environ", {"GMAIL_USERNAME": "sender@gmail.com", "GMAIL_APP_PASSWORD": "app-password"})
+    @patch("check_stock.smtplib.SMTP")
+    @patch("check_stock.smtplib.SMTP_SSL")
+    def test_authentication_rejection_does_not_retry(self, ssl_smtp, plain_smtp):
+        ssl_smtp.return_value.login.side_effect = smtplib.SMTPAuthenticationError(535, b"Bad credentials")
+        with self.assertRaisesRegex(RuntimeError, "rifiutato le credenziali"):
+            send_email()
+        plain_smtp.assert_not_called()
+
+    @patch.dict("os.environ", {"GMAIL_USERNAME": "sender@gmail.com", "GMAIL_APP_PASSWORD": "app-password"})
+    @patch("check_stock.smtplib.SMTP")
+    @patch("check_stock.smtplib.SMTP_SSL")
+    def test_disconnect_during_send_does_not_retry_delivery(self, ssl_smtp, plain_smtp):
+        ssl_smtp.return_value.send_message.side_effect = smtplib.SMTPServerDisconnected("closed")
+        with self.assertRaises(smtplib.SMTPServerDisconnected):
+            send_email()
+        ssl_smtp.return_value.send_message.assert_called_once()
+        plain_smtp.assert_not_called()
 
     @patch("check_stock.send_email")
     @patch("check_stock.check_stock", return_value=False)

@@ -39,6 +39,8 @@ def check_stock(url: str = URL, *, headed: bool = False) -> bool:
                 consent.first.click(timeout=5000)
             except Exception:
                 pass
+            if page.title().strip().lower() == "access denied":
+                raise RuntimeError("H&M antibot: Access Denied dopo il caricamento JavaScript")
             # Some layouts keep sizes inside a dropdown.
             opener = page.get_by_role("button", name=re.compile(r"^(seleziona (?:la |una )?taglia|select size)", re.I))
             opener.or_(page.get_by_role("button", name=SIZE)).or_(page.get_by_role("radio", name=SIZE)).or_(page.get_by_role("option", name=SIZE)).first.wait_for(state="visible", timeout=45000)
@@ -79,10 +81,12 @@ def check_stock(url: str = URL, *, headed: bool = False) -> bool:
                     return False
                 raise RuntimeError("XS selezionata ma acquisto non confermato")
             return True
-        except Exception:
+        except Exception as exc:
             Path("artifacts").mkdir(exist_ok=True)
             page.screenshot(path="artifacts/check.png", full_page=True)
             Path("artifacts/page.html").write_text(page.content(), encoding="utf-8")
+            if page.title().strip().lower() == "access denied":
+                raise RuntimeError("H&M antibot: Access Denied; disponibilità non verificabile") from exc
             raise
         finally:
             context.close()

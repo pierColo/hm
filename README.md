@@ -39,7 +39,13 @@ modifiche ai selettori generano un errore del workflow; non vengono considerati 
 In caso di errore vengono salvati screenshot e HTML nell'artefatto `hm-diagnostics`.
 Il sito può bloccare anche i runner GitHub: il test manuale iniziale serve a verificarlo.
 
-Verifica locale: i test unitari sono passati, ma il controllo reale con Chromium ha
-ricevuto HTTP 403 da H&M. La lettura della disponibilità sul sito reale e la consegna
-SMTP non sono quindi ancora verificate. Servono un'esecuzione riuscita su Actions
-e i secret Gmail prima di considerare il monitor operativo.
+Verifica: i test automatici sono passati. Il controllo locale riceve HTTP 403;
+su GitHub Linux anche Chromium con interfaccia sotto Xvfb riceve una pagina
+intermedia HTTP 200 che dopo JavaScript diventa `Access Denied`. Il workflow usa
+ora `--headed` sotto Xvfb, ma questo non ha risolto il blocco del sito.
+La lettura delle taglie reali e la consegna SMTP restano da verificare.
+
+Il workflow manuale **Diagnostica accesso H&M** confronta Chromium standard e
+Chromium completo con un profilo browser su Linux e Windows. Legge titolo e
+contenuto dopo JavaScript e salva gli artefatti: un risultato verde della diagnostica
+significa che il test è stato eseguito, non che H&M abbia consentito l'accesso.

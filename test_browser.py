@@ -14,6 +14,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
+        if self.path == "/blocked":
+            self.wfile.write(b"<title>Access Denied</title><h1>Access Denied</h1><button>Accetta tutti</button>")
+            return
         disabled = "disabled" if self.path == "/sold-out" else ""
         self.wfile.write((
             '<button>Accetta tutti</button>'
@@ -41,6 +44,10 @@ class BrowserTests(unittest.TestCase):
 
     def test_disabled_xs_is_unavailable(self):
         self.assertFalse(check_stock(self.url + "/sold-out"))
+
+    def test_http_200_block_is_an_error(self):
+        with self.assertRaisesRegex(RuntimeError, "H&M antibot"):
+            check_stock(self.url + "/blocked")
 
 
 if __name__ == "__main__":

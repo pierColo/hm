@@ -19,6 +19,13 @@ UNAVAILABLE = re.compile(r"esaurit|non disponibile|avvisami|sold out|out of stoc
 ADD = re.compile(r"aggiungi (?:al|nel) (?:carrello|sacchetto)|add to (?:bag|cart)", re.I)
 
 
+def load_local_env(path: Path | None = None) -> None:
+    from dotenv import load_dotenv
+    # GitHub secrets and explicitly set environment variables take precedence.
+    load_dotenv(path if path is not None else Path(__file__).resolve().with_name(".env"),
+                override=False, interpolate=False, encoding="utf-8-sig")
+
+
 def candidate_available(text: str, disabled: bool, status: str = "") -> bool:
     return bool(SIZE.match(text.strip())) and not disabled and not UNAVAILABLE.search(text + " " + status)
 
@@ -170,7 +177,7 @@ def send_email(*, test: bool = False) -> None:
     username = os.environ.get("GMAIL_USERNAME", "").strip()
     password = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "")
     if not username or not password:
-        raise RuntimeError("Configura i secret GMAIL_USERNAME e GMAIL_APP_PASSWORD")
+        raise RuntimeError("Configura GMAIL_USERNAME e GMAIL_APP_PASSWORD nel .env locale o nei secret GitHub Actions")
     message = EmailMessage()
     message["From"] = username
     message["To"] = RECIPIENT
@@ -207,6 +214,7 @@ def main() -> None:
             parser.error("--init-session richiede --browser chrome e --profile")
         init_session(args.profile, debug=args.cdp)
         return
+    load_local_env()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     mode = "disattivato (dry-run)" if args.dry_run else (
         "avviso se XS disponibile, test se esaurita" if args.test_email else "solo se XS disponibile")

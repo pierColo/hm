@@ -28,8 +28,16 @@ python check_stock.py --dry-run
 python -m unittest -v
 ```
 
-Per l'invio locale imposta `GMAIL_USERNAME` e `GMAIL_APP_PASSWORD` nell'ambiente.
-Non inserire credenziali nei file o nei commit.
+Per l'invio locale copia `.env.example` in `.env` (se non è già presente) e compila:
+
+```dotenv
+GMAIL_USERNAME=indirizzo-del-mittente@gmail.com
+GMAIL_APP_PASSWORD=password-per-app-google
+```
+
+Lo script carica il `.env` nella propria cartella, anche se avviato da un'altra
+directory. Le variabili d'ambiente esistenti hanno precedenza. `.env` è escluso
+da Git: non pubblicare credenziali nei commit. Su Actions si usano i secret GitHub.
 
 ### Email di test quando XS è esaurita
 
@@ -45,8 +53,8 @@ Se XS è esaurita, invia a `gienni.doria@gmail.com` un messaggio con oggetto
 (ad esempio HTTP 403) non viene trattato come taglia esaurita e non invia email.
 Senza `--test-email`, XS esaurita non genera messaggi.
 
-I secret GitHub non sono disponibili nel PowerShell locale. Per il test locale
-imposta le credenziali senza scrivere la password nella cronologia:
+I secret GitHub non sono disponibili nel PowerShell locale. Puoi usare `.env`
+come descritto sopra, oppure impostare le credenziali per la sola sessione:
 
 ```powershell
 $env:GMAIL_USERNAME = Read-Host 'Gmail del mittente'

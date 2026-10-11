@@ -1,10 +1,31 @@
 import unittest
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from check_stock import RECIPIENT, candidate_available, send_email, main
+from check_stock import RECIPIENT, candidate_available, send_email, main, load_local_env
 
 
 class StockTests(unittest.TestCase):
+    @patch.dict("os.environ", {}, clear=True)
+    def test_dotenv_supports_bom_and_literal_password(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / ".env"
+            path.write_text('GMAIL_USERNAME=sender@gmail.com\nGMAIL_APP_PASSWORD="literal${TOKEN}"\n', encoding="utf-8-sig")
+            load_local_env(path)
+            self.assertEqual(os.environ["GMAIL_USERNAME"], "sender@gmail.com")
+            self.assertEqual(os.environ["GMAIL_APP_PASSWORD"], "literal${TOKEN}")
+
+    @patch.dict("os.environ", {"GMAIL_USERNAME": "secret@gmail.com", "GMAIL_APP_PASSWORD": "secret"}, clear=True)
+    def test_dotenv_does_not_override_environment(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / ".env"
+            path.write_text("GMAIL_USERNAME=file@gmail.com\nGMAIL_APP_PASSWORD=file-password\n", encoding="utf-8")
+            load_local_env(path)
+            self.assertEqual(os.environ["GMAIL_USERNAME"], "secret@gmail.com")
+            self.assertEqual(os.environ["GMAIL_APP_PASSWORD"], "secret")
+
     def test_size_must_be_available(self):
         self.assertTrue(candidate_available("XS", False))
         for text, disabled in [("XS", True), ("XS Esaurita", False), ("XS Avvisami", False), ("XXS", False), ("Disponibile XS", False)]:

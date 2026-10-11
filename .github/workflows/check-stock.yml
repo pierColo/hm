@@ -36,9 +36,9 @@ jobs:
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
-            python check_stock.py --dry-run
+            xvfb-run -a python check_stock.py --headed --dry-run
           else
-            python check_stock.py
+            xvfb-run -a python check_stock.py --headed
           fi
       - name: Diagnostica in caso di errore
         if: failure()

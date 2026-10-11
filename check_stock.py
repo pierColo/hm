@@ -20,12 +20,12 @@ def candidate_available(text: str, disabled: bool) -> bool:
     return bool(SIZE.match(text.strip())) and not disabled and not UNAVAILABLE.search(text)
 
 
-def check_stock(url: str = URL) -> bool:
+def check_stock(url: str = URL, *, headed: bool = False) -> bool:
     # Import lazily so notification logic can be tested without a browser.
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(headless=not headed)
         context = browser.new_context(locale="it-IT")
         page = context.new_page()
         page.set_default_timeout(15000)
@@ -110,9 +110,10 @@ def send_email() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Controlla senza inviare email")
+    parser.add_argument("--headed", action="store_true", help="Esegue Chromium con interfaccia (su Linux usare xvfb-run)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    available = check_stock()
+    available = check_stock(headed=args.headed)
     logging.info("XS: %s", "disponibile" if available else "esaurita")
     if available and not args.dry_run:
         send_email()

@@ -13,13 +13,14 @@ from pathlib import Path
 
 URL = "https://www2.hm.com/it_it/productpage.1333421001.html"
 RECIPIENT = "gienni.doria@gmail.com"
-SIZE = re.compile(r"^XS(?:\s|$)", re.I)
+SIZE = re.compile(r"^\s*XS(?:\s|$)", re.I)
+SIZE_NAME = re.compile(r"^\s*(?:taglia\s+)?XS(?:[\s:]|$)", re.I)
 UNAVAILABLE = re.compile(r"esaurit|non disponibile|avvisami|sold out|out of stock", re.I)
 ADD = re.compile(r"aggiungi (?:al|nel) (?:carrello|sacchetto)|add to (?:bag|cart)", re.I)
 
 
-def candidate_available(text: str, disabled: bool) -> bool:
-    return bool(SIZE.match(text.strip())) and not disabled and not UNAVAILABLE.search(text)
+def candidate_available(text: str, disabled: bool, status: str = "") -> bool:
+    return bool(SIZE.match(text.strip())) and not disabled and not UNAVAILABLE.search(text + " " + status)
 
 
 def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = None,
@@ -76,7 +77,7 @@ def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = N
             # Some layouts keep sizes inside a dropdown.
             logging.info("Pagina: %s. Ricerca selettore taglie (massimo 45 secondi)...", page.title())
             opener = page.get_by_role("button", name=re.compile(r"^(seleziona (?:la |una )?taglia|select size)", re.I))
-            opener.or_(page.get_by_role("button", name=SIZE)).or_(page.get_by_role("radio", name=SIZE)).or_(page.get_by_role("option", name=SIZE)).first.wait_for(state="visible", timeout=45000)
+            opener.or_(page.get_by_role("button", name=SIZE_NAME)).or_(page.get_by_role("radio", name=SIZE_NAME)).or_(page.get_by_role("option", name=SIZE_NAME)).first.wait_for(state="visible", timeout=45000)
             if opener.count() and opener.first.is_visible():
                 logging.info("Apertura selettore taglie...")
                 opener.first.click()
@@ -93,19 +94,25 @@ def check_stock(url: str = URL, *, headed: bool = False, channel: str | None = N
                 if not SIZE.match(text):
                     continue
                 disabled = control.is_disabled() or control.get_attribute("aria-disabled") == "true"
-                matches.append((control, text, disabled))
+                status = control.get_attribute("aria-label") or ""
+                if control.locator('[data-testid$="-out-of-stock"]').count():
+                    status += " esaurita"
+                matches.append((control, text, disabled, status))
             if not matches:
                 raise RuntimeError("Selettore XS non riconosciuto: impossibile determinare la disponibilità")
             if len(matches) != 1:
                 raise RuntimeError("Più selettori XS visibili: controllo ambiguo")
-            control, text, disabled = matches[0]
-            logging.info("Controllo XS trovato: %r, disabilitato: %s", text, disabled)
-            if not candidate_available(text, disabled):
+            control, text, disabled, status = matches[0]
+            logging.info("Controllo XS trovato: %r, disabilitato: %s, stato: %s", text, disabled, status)
+            if not candidate_available(text, disabled, status):
                 return False
             control.click()
+            if control.get_attribute("role") == "radio":
+                from playwright.sync_api import expect
+                expect(control).to_have_attribute("aria-checked", "true", timeout=10000)
             logging.info("XS selezionata. Verifica pulsante acquisto...")
             # Selecting XS must enable purchase. Never click the cart button.
-            add = page.get_by_role("button", name=ADD)
+            add = page.get_by_role("button", name=ADD).filter(visible=True)
             add.first.wait_for(state="visible", timeout=10000)
             if add.count() != 1:
                 raise RuntimeError("Pulsante acquisto ambiguo")

@@ -80,7 +80,8 @@ python -u check_stock.py --cdp --dry-run
 Il controllo si collega al browser aperto e usa la scheda esistente senza
 ricaricarla, poi lascia aperto Chrome. La porta 9222 è configurata su localhost;
 usa il profilo dedicato e chiudilo quando finisci il test. Questo tentativo non è
-ancora verificato sul prodotto reale e non rende operativi i runner cloud.
+stato verificato sul prodotto reale: il controllo CDP termina con `XS: esaurita`.
+Non rende operativi i runner cloud; la consegna SMTP resta da verificare.
 
 ## Limiti
 
@@ -94,7 +95,8 @@ Verifica: i test automatici sono passati. Il controllo locale riceve HTTP 403;
 su GitHub Linux anche Chromium con interfaccia sotto Xvfb riceve una pagina
 intermedia HTTP 200 che dopo JavaScript diventa `Access Denied`. Il workflow usa
 ora `--headed` sotto Xvfb, ma questo non ha risolto il blocco del sito.
-La lettura delle taglie reali e la consegna SMTP restano da verificare.
+La lettura della taglia XS nella scheda reale è stata verificata con la modalità
+CDP (`XS: esaurita`); la consegna SMTP resta da verificare.
 
 Il workflow manuale **Diagnostica accesso H&M** confronta Chromium standard e
 Chromium completo con un profilo browser su Linux e Windows. Legge titolo e

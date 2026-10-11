@@ -23,6 +23,19 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/blocked":
             self.wfile.write(b"<title>Access Denied</title><h1>Access Denied</h1><button>Accetta tutti</button>")
             return
+        if self.path.startswith("/hm-"):
+            sold_out = self.path == "/hm-sold-out"
+            status = "esaurita. Seleziona per ricevere una notifica se torna disponibile" if sold_out else "disponibile. Seleziona la taglia"
+            marker = "out-of-stock" if sold_out else "in-stock"
+            self.wfile.write((
+                '<button>Accetta tutti</button>'
+                f'<div role="radio" aria-checked="false" aria-label="Taglia XS: {status}" '
+                'onclick="this.setAttribute(\'aria-checked\',\'true\')">'
+                f'<div data-testid="002-{marker}">&nbsp;&nbsp;XS&nbsp;&nbsp;</div></div>'
+                '<button>Aggiungi al carrello</button>'
+                '<button style="display:none">Aggiungi al carrello</button>'
+            ).encode())
+            return
         disabled = "disabled" if self.path == "/sold-out" else ""
         self.wfile.write((
             '<button>Accetta tutti</button>'
@@ -50,6 +63,12 @@ class BrowserTests(unittest.TestCase):
 
     def test_disabled_xs_is_unavailable(self):
         self.assertFalse(check_stock(self.url + "/sold-out"))
+
+    def test_hm_radio_label_reports_sold_out_even_when_clickable(self):
+        self.assertFalse(check_stock(self.url + "/hm-sold-out"))
+
+    def test_hm_radio_with_nonbreaking_spaces_and_hidden_cart(self):
+        self.assertTrue(check_stock(self.url + "/hm-available"))
 
     def test_persistent_profile_can_be_reopened(self):
         with TemporaryDirectory() as profile:
